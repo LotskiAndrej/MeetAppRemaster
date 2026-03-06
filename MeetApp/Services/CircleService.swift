@@ -56,6 +56,22 @@ class CircleService {
             }
     }
 
+    /// Deletes a circle, all its events, and removes it from all members' circleIds.
+    func deleteCircle(circleId: String, memberIds: [String]) async throws {
+        let eventDocs = try await db.collection("events")
+            .whereField("circleId", isEqualTo: circleId)
+            .getDocuments()
+        for doc in eventDocs.documents {
+            try await doc.reference.delete()
+        }
+        try await db.collection("circles").document(circleId).delete()
+        for memberId in memberIds {
+            try await db.collection("users").document(memberId).updateData([
+                "circleIds": FieldValue.arrayRemove([circleId])
+            ])
+        }
+    }
+
     /// Removes a member from the circle and removes the circle from the user's circleIds.
     func kickMember(circleId: String, userId: String) async throws {
         try await db.collection("circles").document(circleId).updateData([

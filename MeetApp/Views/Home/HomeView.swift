@@ -14,6 +14,37 @@ private class HomeViewModel: ObservableObject {
     private var commentListeners: [String: ListenerRegistration] = [:]
     private var proposalListeners: [String: ListenerRegistration] = [:]
 
+    var upcomingEvents: [Event] {
+        events.filter { $0.date.dateValue() >= Date() }
+              .sorted { $0.date.dateValue() < $1.date.dateValue() }
+    }
+
+    var pastEvents: [Event] {
+        events.filter { $0.date.dateValue() < Date() }
+              .sorted { $0.date.dateValue() > $1.date.dateValue() }
+    }
+
+    var upcomingEventsByDay: [(title: String, events: [Event])] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: upcomingEvents) {
+            cal.startOfDay(for: $0.date.dateValue())
+        }
+        return grouped.keys.sorted().map { day in
+            (title: daySectionTitle(for: day), events: grouped[day]!
+                .sorted { $0.date.dateValue() < $1.date.dateValue() })
+        }
+    }
+
+    private func daySectionTitle(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date)     { return "Today" }
+        if cal.isDateInTomorrow(date)  { return "Tomorrow" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMMM"
+        return f.string(from: date)
+    }
+
     func listenToEvents(in circleId: String) {
         stopListening()
         eventListener = eventService.listenToEvents(circleId: circleId) { [weak self] events in
@@ -83,6 +114,7 @@ struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var navigationManager: NavigationManager
     @StateObject private var viewModel = HomeViewModel()
+    @AppStorage("pastEventsSectionExpanded") private var pastSectionExpanded = false
     @State private var showCreateEvent = false
     @State private var showMembers = false
     @State private var eventToDelete: Event?
@@ -185,43 +217,78 @@ struct HomeView: View {
             )
         } else {
             List {
-                ForEach(viewModel.events) { event in
-                    let isOrganizer = event.organizerId == currentUserId
-                    Button {
-                        navigationManager.homePath.append(HomeDestination.eventDetail(event))
-                    } label: {
-                        EventCard(
-                            event: event,
-                            commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
-                            pendingProposalCount: viewModel.pendingProposalCounts[event.id ?? ""] ?? 0,
-                            currentUserId: currentUserId,
-                            isOrganizer: isOrganizer,
-                            onStatusChange: { status in
-                                guard let eventId = event.id else { return }
-                                viewModel.updateParticipantStatus(
-                                    eventId: eventId, userId: currentUserId, status: status)
-                            },
-                            onDelete: isOrganizer ? { eventToDelete = event } : nil
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if isOrganizer {
-                            Button(role: .destructive) {
-                                eventToDelete = event
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                ForEach(viewModel.upcomingEventsByDay, id: \.title) { section in
+                    Section(section.title) {
+                        ForEach(section.events) { event in
+                            eventRow(for: event)
                         }
                     }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                }
+
+                if !viewModel.pastEvents.isEmpty {
+                    Section {
+                        if pastSectionExpanded {
+                            ForEach(viewModel.pastEvents) { event in
+                                eventRow(for: event)
+                            }
+                        }
+                    } header: {
+                        Button {
+                            withAnimation { pastSectionExpanded.toggle() }
+                        } label: {
+                            HStack {
+                                Text("Past Events")
+                                    .font(.footnote)
+                                    .fontWeight(.semibold)
+                                    .textCase(nil)
+                                Spacer()
+                                Image(systemName: pastSectionExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    @ViewBuilder
+    private func eventRow(for event: Event) -> some View {
+        let isOrganizer = event.organizerId == currentUserId
+        Button {
+            navigationManager.homePath.append(HomeDestination.eventDetail(event))
+        } label: {
+            EventCard(
+                event: event,
+                commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
+                pendingProposalCount: viewModel.pendingProposalCounts[event.id ?? ""] ?? 0,
+                currentUserId: currentUserId,
+                isOrganizer: isOrganizer,
+                onStatusChange: { status in
+                    guard let eventId = event.id else { return }
+                    viewModel.updateParticipantStatus(
+                        eventId: eventId, userId: currentUserId, status: status)
+                },
+                onDelete: isOrganizer ? { eventToDelete = event } : nil
+            )
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if isOrganizer {
+                Button(role: .destructive) {
+                    eventToDelete = event
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
     }
 }
 

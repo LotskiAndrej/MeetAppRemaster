@@ -1,1 +1,4 @@
 functions/node_modules/*
+firebase-debug.log
+.claude
+build.log

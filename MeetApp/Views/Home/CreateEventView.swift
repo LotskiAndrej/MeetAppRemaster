@@ -7,7 +7,7 @@ struct CreateEventView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var place = ""
-    @State private var date = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+    @State private var date = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
@@ -72,7 +72,7 @@ struct CreateEventView: View {
                 place: trimmedPlace,
                 date: Timestamp(date: date),
                 createdAt: Timestamp(date: Date()),
-                participants: [userId: .going]
+                participants: [:]
             )
             try eventService.createEvent(event)
             dismiss()

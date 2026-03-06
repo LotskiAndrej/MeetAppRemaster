@@ -51,20 +51,30 @@ struct EventCard: View {
             .padding(.trailing, isOrganizer ? 24 : 0)
 
             // Metadata row
-            HStack(spacing: 16) {
-                Label("\(goingCount) going", systemImage: "person.fill")
+            HStack(spacing: 12) {
+                if goingCount > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.fill")
+                        Text("\(goingCount) going")
+                    }
                     .font(.caption)
                     .foregroundStyle(.green)
+                }
                 if commentCount > 0 {
-                    Label("\(commentCount)", systemImage: "bubble.left")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.left")
+                        Text("\(commentCount)")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 if pendingProposalCount > 0 {
-                    Label("\(pendingProposalCount) proposal\(pendingProposalCount == 1 ? "" : "s")",
-                          systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("\(pendingProposalCount) proposal\(pendingProposalCount == 1 ? "" : "s")")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                 }
                 Spacer()
                 if isPast {
@@ -105,14 +115,13 @@ struct EventCard: View {
         )
         .overlay(alignment: .topTrailing) {
             if let onDelete, isOrganizer {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.subheadline)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
-                        .padding(10)
-                        .contentShape(Rectangle())
-                }
+                Image(systemName: "xmark.circle.fill")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .padding(10)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(TapGesture().onEnded { onDelete() })
             }
         }
     }
@@ -127,17 +136,20 @@ private struct RSVPButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? selectedColor : selectedColor.opacity(0.1))
-                .foregroundStyle(isSelected ? Color.white : selectedColor)
-                .clipShape(Capsule())
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(title)
         }
-        .disabled(isDisabled)
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(isSelected ? selectedColor : selectedColor.opacity(0.1))
+        .foregroundStyle(isSelected ? Color.white : selectedColor)
+        .clipShape(Capsule())
         .opacity(isDisabled ? 0.4 : 1)
         .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .highPriorityGesture(
+            isDisabled ? nil : TapGesture().onEnded { action() }
+        )
     }
 }

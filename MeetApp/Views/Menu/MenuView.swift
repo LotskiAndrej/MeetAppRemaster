@@ -6,6 +6,10 @@ struct MenuView: View {
     @EnvironmentObject private var tabManager: TabManager
     @State private var showCreateCircle = false
     @State private var showJoinCircle = false
+    @State private var circleToDelete: FriendCircle?
+    @State private var circleToLeave: FriendCircle?
+
+    private var currentUserId: String { appState.authService.currentUser?.uid ?? "" }
 
     var body: some View {
         NavigationStack {
@@ -45,6 +49,21 @@ struct MenuView: View {
                                         }
                                     }
                                 }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if circle.adminId == currentUserId {
+                                        Button(role: .destructive) {
+                                            circleToDelete = circle
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    } else {
+                                        Button(role: .destructive) {
+                                            circleToLeave = circle
+                                        } label: {
+                                            Label("Leave", systemImage: "arrow.right.square")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -71,6 +90,38 @@ struct MenuView: View {
             }
             .sheet(isPresented: $showJoinCircle) {
                 JoinCircleSheet()
+            }
+            .alert("Delete Circle", isPresented: Binding(
+                get: { circleToDelete != nil },
+                set: { if !$0 { circleToDelete = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    if let circle = circleToDelete, let circleId = circle.id {
+                        Task { try? await CircleService().deleteCircle(circleId: circleId, memberIds: circle.memberIds) }
+                    }
+                    circleToDelete = nil
+                }
+                Button("Cancel", role: .cancel) { circleToDelete = nil }
+            } message: {
+                if let circle = circleToDelete {
+                    Text("Delete \"\(circle.name)\"? This will remove the circle for all members and cannot be undone.")
+                }
+            }
+            .alert("Leave Circle", isPresented: Binding(
+                get: { circleToLeave != nil },
+                set: { if !$0 { circleToLeave = nil } }
+            )) {
+                Button("Leave", role: .destructive) {
+                    if let circle = circleToLeave, let circleId = circle.id {
+                        Task { try? await CircleService().kickMember(circleId: circleId, userId: currentUserId) }
+                    }
+                    circleToLeave = nil
+                }
+                Button("Cancel", role: .cancel) { circleToLeave = nil }
+            } message: {
+                if let circle = circleToLeave {
+                    Text("Leave \"\(circle.name)\"? You'll need the invite code to rejoin.")
+                }
             }
         }
     }

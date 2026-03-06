@@ -34,6 +34,7 @@ private class EventDetailViewModel: ObservableObject {
     @Published var isSubmittingComment = false
     @Published var commentAuthors: [String: User] = [:]
     @Published var attendees: [User] = []
+    @Published var notGoingAttendees: [User] = []
 
     private let eventService = EventService()
     private let userService = UserService()
@@ -82,6 +83,8 @@ private class EventDetailViewModel: ObservableObject {
 
     func loadAttendees() {
         let goingIds = event.participants.filter { $0.value == .going }.map(\.key)
+        let notGoingIds = event.participants.filter { $0.value == .notGoing }.map(\.key)
+
         for uid in goingIds {
             if !attendees.contains(where: { $0.id == uid }) {
                 Task {
@@ -95,9 +98,27 @@ private class EventDetailViewModel: ObservableObject {
                 }
             }
         }
-        self.attendees.removeAll { id in
+        attendees.removeAll { id in
             guard let uid = id.id else { return true }
             return !goingIds.contains(uid)
+        }
+
+        for uid in notGoingIds {
+            if !notGoingAttendees.contains(where: { $0.id == uid }) {
+                Task {
+                    if let user = try? await userService.fetchUser(uid: uid) {
+                        await MainActor.run {
+                            if !self.notGoingAttendees.contains(where: { $0.id == uid }) {
+                                self.notGoingAttendees.append(user)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        notGoingAttendees.removeAll { id in
+            guard let uid = id.id else { return true }
+            return !notGoingIds.contains(uid)
         }
     }
 
@@ -176,6 +197,14 @@ private class EventDetailViewModel: ObservableObject {
         )
         try? eventService.addProposal(proposal, to: eventId)
     }
+
+    func updateEvent(place: String, date: Date) {
+        guard let eventId = event.id else { return }
+        let newTimestamp = Timestamp(date: date)
+        event.place = place
+        event.date = newTimestamp
+        Task { try? await eventService.updateEvent(eventId: eventId, place: place, date: newTimestamp) }
+    }
 }
 
 // MARK: - EventDetailView
@@ -184,6 +213,7 @@ struct EventDetailView: View {
     @StateObject private var viewModel: EventDetailViewModel
     @EnvironmentObject private var appState: AppState
     @State private var showProposeSheet = false
+    @State private var showEditSheet = false
     @FocusState private var isCommentFocused: Bool
 
     init(event: Event) {
@@ -200,9 +230,9 @@ struct EventDetailView: View {
                 VStack(spacing: 16) {
                     eventHeaderCard
                     rsvpCard
-                    participantsCard
+                    if !viewModel.attendees.isEmpty || !viewModel.notGoingAttendees.isEmpty { participantsCard }
                     commentsCard
-                    proposalsCard
+                    if !viewModel.proposals.isEmpty { proposalsCard }
                 }
                 .padding(16)
                 .onTapGesture { isCommentFocused = false }
@@ -230,6 +260,20 @@ struct EventDetailView: View {
                 Spacer()
                 Button("Done") { isCommentFocused = false }
             }
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    showProposeSheet = true
+                } label: {
+                    Image(systemName: "text.badge.plus")
+                }
+                if isOrganizer {
+                    Button {
+                        showEditSheet = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showProposeSheet) {
             ProposeChangeView { proposedPlace, proposedDate in
@@ -240,18 +284,19 @@ struct EventDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showEditSheet) {
+            EditEventView(event: viewModel.event) { place, date in
+                viewModel.updateEvent(place: place, date: date)
+            }
+        }
         .onAppear { viewModel.startListening() }
         .onDisappear { viewModel.stopListening() }
     }
 
     // MARK: - Event Header Card
 
-    @ViewBuilder
     private var eventHeaderCard: some View {
-        let going = viewModel.event.participants.values.filter { $0 == .going }.count
-        let notGoing = viewModel.event.participants.values.filter { $0 == .notGoing }.count
-
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(viewModel.event.place)
@@ -271,16 +316,6 @@ struct EventDetailView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Divider()
-
-            HStack(spacing: 16) {
-                Label("\(going) going", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Label("\(notGoing) not going", systemImage: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-            }
-            .font(.caption)
         }
         .padding(16)
         .background(.ultraThinMaterial)
@@ -329,24 +364,45 @@ struct EventDetailView: View {
 
     private var participantsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Going (\(viewModel.attendees.count))")
-                .font(.headline)
+            HStack(spacing: 12) {
+                if !viewModel.attendees.isEmpty {
+                    Text("Going (\(viewModel.attendees.count))")
+                        .foregroundStyle(.green)
+                }
+                if !viewModel.notGoingAttendees.isEmpty {
+                    Text("Not Going (\(viewModel.notGoingAttendees.count))")
+                        .foregroundStyle(.red.opacity(0.7))
+                }
+            }
+            .font(.headline)
 
-            if viewModel.attendees.isEmpty {
-                Text("No one is going yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 6)
-            } else {
+            if !viewModel.attendees.isEmpty {
                 VStack(spacing: 8) {
                     ForEach(viewModel.attendees) { user in
                         HStack(spacing: 10) {
                             Image(systemName: "person.circle.fill")
                                 .font(.title3)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.green.opacity(0.8))
                             Text(user.fullName)
                                 .font(.subheadline)
+                                .foregroundStyle(.green)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+
+            if !viewModel.notGoingAttendees.isEmpty {
+                if !viewModel.attendees.isEmpty { Divider() }
+                VStack(spacing: 8) {
+                    ForEach(viewModel.notGoingAttendees) { user in
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.red.opacity(0.4))
+                            Text(user.fullName)
+                                .font(.subheadline)
+                                .foregroundStyle(.red.opacity(0.5))
                             Spacer()
                         }
                     }
@@ -365,9 +421,12 @@ struct EventDetailView: View {
     // MARK: - Comments Card
 
     private var commentsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("Comments")
                 .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
 
             if viewModel.comments.isEmpty {
                 Text("No comments yet.")
@@ -375,23 +434,27 @@ struct EventDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 6)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 0) {
                     ForEach(viewModel.comments) { comment in
                         CommentRow(
                             comment: comment,
                             author: viewModel.commentAuthors[comment.userId],
-                            isOwnComment: comment.userId == currentUserId,
+                            canDelete: comment.userId == currentUserId,
                             onDelete: { viewModel.deleteComment(comment) }
                         )
                         if comment.id != viewModel.comments.last?.id {
-                            Divider().padding(.leading, 42)
+                            Divider()
+                                .padding(.horizontal, 16)
                         }
                     }
                 }
             }
 
             Divider()
+                .padding(.horizontal, 16)
 
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Add a comment…", text: $viewModel.commentText, axis: .vertical)
@@ -412,9 +475,9 @@ struct EventDetailView: View {
                 .disabled(isCommentEmpty || viewModel.isSubmittingComment)
             }
             .id("commentInput")
-            .padding(.bottom, 4)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding(16)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
@@ -427,46 +490,27 @@ struct EventDetailView: View {
 
     private var proposalsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Proposals")
-                    .font(.headline)
-                Spacer()
-                if !isPast {
-                    Button {
-                        showProposeSheet = true
-                    } label: {
-                        Label("Propose", systemImage: "plus")
-                            .font(.subheadline)
-                    }
-                }
-            }
+            Text("Proposals")
+                .font(.headline)
 
-            if viewModel.proposals.isEmpty {
-                Text("No proposals yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 6)
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(viewModel.proposals) { proposal in
-                        ProposalRow(
-                            proposal: proposal,
-                            currentUserId: currentUserId,
-                            isOrganizer: isOrganizer,
-                            isPast: isPast,
-                            onVote: { isUpvote in
-                                viewModel.vote(
-                                    on: proposal, userId: currentUserId, isUpvote: isUpvote)
-                            },
-                            onAccept: {
-                                viewModel.accept(proposal: proposal)
-                            },
-                            onDeny: {
-                                viewModel.reject(proposal: proposal)
-                            }
-                        )
-                    }
+            VStack(spacing: 10) {
+                ForEach(viewModel.proposals) { proposal in
+                    ProposalRow(
+                        proposal: proposal,
+                        currentUserId: currentUserId,
+                        isOrganizer: isOrganizer,
+                        isPast: isPast,
+                        onVote: { isUpvote in
+                            viewModel.vote(
+                                on: proposal, userId: currentUserId, isUpvote: isUpvote)
+                        },
+                        onAccept: {
+                            viewModel.accept(proposal: proposal)
+                        },
+                        onDeny: {
+                            viewModel.reject(proposal: proposal)
+                        }
+                    )
                 }
             }
         }
@@ -511,46 +555,75 @@ private struct RSVPButton: View {
 private struct CommentRow: View {
     let comment: Comment
     let author: User?
-    let isOwnComment: Bool
-    let onDelete: () -> Void
+    var canDelete: Bool = false
+    var onDelete: () -> Void = {}
+
+    @State private var dragOffset: CGFloat = 0
+    private let deleteButtonWidth: CGFloat = 72
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "person.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 2) {
-                if let author = author {
-                    Text(author.fullName)
-                        .font(.caption.bold())
-                } else {
-                    Text("Loading...")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
+        ZStack(alignment: .trailing) {
+            if canDelete && dragOffset < 0 {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white)
+                        .frame(maxHeight: .infinity)
+                        .frame(width: min(deleteButtonWidth, -dragOffset))
+                        .background(Color.red)
                 }
-                Text(comment.text)
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-                TimelineView(.periodic(from: .now, by: 60)) { _ in
-                    Text(relativeTimeString(from: comment.createdAt.dateValue()))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+                .buttonStyle(.plain)
             }
 
-            Spacer(minLength: 0)
-
-            if isOwnComment {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.tertiary)
-                        .padding(6)
-                        .contentShape(Rectangle())
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "person.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let author {
+                        Text(author.fullName)
+                            .font(.caption.bold())
+                    } else {
+                        Text("Loading...")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(comment.text)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    TimelineView(.periodic(from: .now, by: 60)) { _ in
+                        Text(relativeTimeString(from: comment.createdAt.dateValue()))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .offset(x: dragOffset)
         }
+        .clipped()
+        .gesture(
+            canDelete ? DragGesture(minimumDistance: 15, coordinateSpace: .local)
+                .onChanged { value in
+                    let x = value.translation.width
+                    if x < 0 {
+                        dragOffset = max(x, -deleteButtonWidth)
+                    } else if dragOffset < 0 {
+                        dragOffset = min(0, dragOffset + x)
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        dragOffset = (-dragOffset) > deleteButtonWidth / 2 ? -deleteButtonWidth : 0
+                    }
+                }
+            : nil
+        )
     }
 }
 
@@ -645,5 +718,62 @@ private struct ProposalRow: View {
             Color(.systemFill)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - EditEventView
+
+private struct EditEventView: View {
+    let event: Event
+    let onSave: (String, Date) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var place: String
+    @State private var date: Date
+
+    init(event: Event, onSave: @escaping (String, Date) -> Void) {
+        self.event = event
+        self.onSave = onSave
+        _place = State(initialValue: event.place)
+        _date = State(initialValue: event.date.dateValue())
+    }
+
+    private var hasChanges: Bool {
+        let trimmed = place.trimmingCharacters(in: .whitespaces)
+        return trimmed != event.place || abs(date.timeIntervalSince(event.date.dateValue())) > 1
+    }
+
+    private var isValid: Bool {
+        !place.trimmingCharacters(in: .whitespaces).isEmpty && hasChanges
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Event Details") {
+                    TextField("Place", text: $place)
+                    DatePicker(
+                        "Date & Time",
+                        selection: $date,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                }
+            }
+            .navigationTitle("Edit Event")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(place.trimmingCharacters(in: .whitespaces), date)
+                        dismiss()
+                    }
+                    .disabled(!isValid)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
     }
 }

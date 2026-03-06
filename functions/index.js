@@ -226,17 +226,45 @@ exports.onEventUpdated = onDocumentUpdated('events/{eventId}', async (event) => 
   const before = event.data.before.data();
   const after = event.data.after.data();
 
+  // --- Notify going users when place or date changes ---
+  const placeChanged = before.place !== after.place;
+  const dateChanged = before.date?.seconds !== after.date?.seconds;
+
+  if (placeChanged || dateChanged) {
+    const participants = after.participants ?? {};
+    const goingIds = Object.entries(participants)
+      .filter(([uid, status]) => status === 'going' && uid !== after.organizerId)
+      .map(([uid]) => uid);
+
+    if (goingIds.length) {
+      const [circleName, tokens] = await Promise.all([
+        getCircleName(after.circleId),
+        getTokensForUsers(goingIds),
+      ]);
+
+      let body;
+      if (placeChanged && dateChanged) {
+        body = `Place changed to ${after.place} and date updated`;
+      } else if (placeChanged) {
+        body = `Place changed to ${after.place}`;
+      } else {
+        body = `Date/time updated for ${after.place}`;
+      }
+
+      await sendNotification(tokens, `Event updated in ${circleName}`, body);
+    }
+  }
+
+  // --- Notify existing going users when someone new joins ---
   const beforeParticipants = before.participants ?? {};
   const afterParticipants = after.participants ?? {};
 
-  // Find UIDs that just switched to 'going'
   const newlyGoingIds = Object.entries(afterParticipants)
     .filter(([uid, status]) => status === 'going' && beforeParticipants[uid] !== 'going')
     .map(([uid]) => uid);
 
   if (!newlyGoingIds.length) return;
 
-  // Users who were already going before this update
   const existingGoingIds = Object.entries(afterParticipants)
     .filter(([uid, status]) => status === 'going' && !newlyGoingIds.includes(uid))
     .map(([uid]) => uid);

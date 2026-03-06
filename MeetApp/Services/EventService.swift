@@ -34,6 +34,13 @@ class EventService {
         ])
     }
 
+    func updateEvent(eventId: String, place: String, date: Timestamp) async throws {
+        try await db.collection("events").document(eventId).updateData([
+            "place": place,
+            "date": date
+        ])
+    }
+
     /// Real-time listener for a single event document.
     func listenToEvent(eventId: String, completion: @escaping (Event?) -> Void) -> ListenerRegistration {
         db.collection("events").document(eventId)
