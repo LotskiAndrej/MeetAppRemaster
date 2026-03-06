@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.andrejlotski.MeetApp</string>
+	<string>com.andrejlotski.MeetAppRemaster</string>
 	<key>PROJECT_ID</key>
 	<string>meet-app-2a4ed</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:264147144338:ios:73317ea0facbb870d2a04b</string>
+	<string>1:264147144338:ios:4664ed9ef88aa1ebd2a04b</string>
 </dict>
 </plist>
