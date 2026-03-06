@@ -17,6 +17,10 @@ class EventService {
             }
     }
 
+    func deleteEvent(eventId: String) async throws {
+        try await db.collection("events").document(eventId).delete()
+    }
+
     func createEvent(_ event: Event) throws {
         let ref = db.collection("events").document()
         var newEvent = event
@@ -49,6 +53,11 @@ class EventService {
                 let comments = snapshot?.documents.compactMap { try? $0.data(as: Comment.self) } ?? []
                 completion(comments)
             }
+    }
+
+    func deleteComment(eventId: String, commentId: String) async throws {
+        try await db.collection("events").document(eventId)
+            .collection("comments").document(commentId).delete()
     }
 
     func addComment(_ comment: Comment, to eventId: String) throws {

@@ -21,7 +21,9 @@ struct EventCard: View {
     let commentCount: Int
     let pendingProposalCount: Int
     let currentUserId: String
+    var isOrganizer: Bool = false
     let onStatusChange: (ParticipantStatus) -> Void
+    var onDelete: (() -> Void)? = nil
 
     private var isPast: Bool {
         event.date.dateValue() < Date()
@@ -37,7 +39,7 @@ struct EventCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Place and date
+            // Place and date — pad trailing to leave room for the X button
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.place)
                     .font(.headline)
@@ -46,6 +48,7 @@ struct EventCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            .padding(.trailing, isOrganizer ? 24 : 0)
 
             // Metadata row
             HStack(spacing: 16) {
@@ -100,6 +103,18 @@ struct EventCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         )
+        .overlay(alignment: .topTrailing) {
+            if let onDelete, isOrganizer {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                        .contentShape(Rectangle())
+                }
+            }
+        }
     }
 }
 

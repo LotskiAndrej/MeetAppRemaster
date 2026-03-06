@@ -52,6 +52,11 @@ private class HomeViewModel: ObservableObject {
         }
     }
 
+    func deleteEvent(_ event: Event) {
+        guard let eventId = event.id else { return }
+        Task { try? await eventService.deleteEvent(eventId: eventId) }
+    }
+
     private func listenToCommentCount(eventId: String) {
         guard commentListeners[eventId] == nil else { return }
         commentListeners[eventId] = eventService.listenToComments(eventId: eventId) {
@@ -80,6 +85,9 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @State private var showCreateEvent = false
     @State private var showMembers = false
+    @State private var eventToDelete: Event?
+
+    private var currentUserId: String { appState.authService.currentUser?.uid ?? "" }
 
     var body: some View {
         NavigationStack(path: $navigationManager.homePath) {
@@ -98,16 +106,12 @@ struct HomeView: View {
                 .toolbar {
                     if appState.activeCircle != nil {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                showMembers = true
-                            } label: {
+                            Button { showMembers = true } label: {
                                 Image(systemName: "person.2")
                             }
                         }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showCreateEvent = true
-                            } label: {
+                            Button { showCreateEvent = true } label: {
                                 Image(systemName: "plus")
                             }
                         }
@@ -119,6 +123,22 @@ struct HomeView: View {
                         EventDetailView(event: event)
                     }
                 }
+                .alert("Delete Event", isPresented: Binding(
+                    get: { eventToDelete != nil },
+                    set: { if !$0 { eventToDelete = nil } }
+                )) {
+                    Button("Delete", role: .destructive) {
+                        if let event = eventToDelete {
+                            viewModel.deleteEvent(event)
+                        }
+                        eventToDelete = nil
+                    }
+                    Button("Cancel", role: .cancel) { eventToDelete = nil }
+                } message: {
+                    if let event = eventToDelete {
+                        Text("Delete the event at \(event.place)? Going attendees will be notified.")
+                    }
+                }
         }
         .sheet(isPresented: $showCreateEvent) {
             CreateEventView()
@@ -128,7 +148,7 @@ struct HomeView: View {
             if let circle = appState.activeCircle {
                 CircleMembersSheet(
                     circle: circle,
-                    currentUserId: appState.authService.currentUser?.uid ?? ""
+                    currentUserId: currentUserId
                 )
             }
         }
@@ -164,31 +184,43 @@ struct HomeView: View {
                 description: Text("Tap + to create the first event.")
             )
         } else {
-            ScrollView {
-                LazyVStack(spacing: 14) {
-                    ForEach(viewModel.events) { event in
-                        NavigationLink(value: HomeDestination.eventDetail(event)) {
-                            EventCard(
-                                event: event,
-                                commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
-                                pendingProposalCount: viewModel.pendingProposalCounts[
-                                    event.id ?? ""] ?? 0,
-                                currentUserId: appState.authService.currentUser?.uid ?? "",
-                                onStatusChange: { status in
-                                    guard let eventId = event.id,
-                                        let userId = appState.authService.currentUser?.uid
-                                    else { return }
-                                    viewModel.updateParticipantStatus(
-                                        eventId: eventId, userId: userId, status: status)
-                                }
-                            )
-                        }
-                        .buttonStyle(.plain)
+            List {
+                ForEach(viewModel.events) { event in
+                    let isOrganizer = event.organizerId == currentUserId
+                    Button {
+                        navigationManager.homePath.append(HomeDestination.eventDetail(event))
+                    } label: {
+                        EventCard(
+                            event: event,
+                            commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
+                            pendingProposalCount: viewModel.pendingProposalCounts[event.id ?? ""] ?? 0,
+                            currentUserId: currentUserId,
+                            isOrganizer: isOrganizer,
+                            onStatusChange: { status in
+                                guard let eventId = event.id else { return }
+                                viewModel.updateParticipantStatus(
+                                    eventId: eventId, userId: currentUserId, status: status)
+                            },
+                            onDelete: isOrganizer ? { eventToDelete = event } : nil
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if isOrganizer {
+                            Button(role: .destructive) {
+                                eventToDelete = event
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 }

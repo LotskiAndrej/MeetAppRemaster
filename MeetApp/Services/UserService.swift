@@ -19,6 +19,10 @@ class UserService {
         try db.collection("users").document(id).setData(from: user, merge: true)
     }
 
+    func updateFCMToken(uid: String, token: String) async throws {
+        try await db.collection("users").document(uid).updateData(["fcmToken": token])
+    }
+
     func listenToUser(uid: String, completion: @escaping (User?) -> Void) -> ListenerRegistration {
         db.collection("users").document(uid).addSnapshotListener { snapshot, _ in
             completion(try? snapshot?.data(as: User.self))

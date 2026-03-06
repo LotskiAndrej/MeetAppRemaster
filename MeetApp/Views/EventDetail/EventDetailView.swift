@@ -3,6 +3,26 @@ import FirebaseAuth
 import FirebaseFirestore
 import SwiftUI
 
+// MARK: - Helpers
+
+private func relativeTimeString(from date: Date) -> String {
+    let seconds = Int(Date().timeIntervalSince(date))
+    if seconds < 60 { return "less than a minute ago" }
+    let minutes = seconds / 60
+    if minutes == 1 { return "1 minute ago" }
+    if minutes < 60 { return "\(minutes) minutes ago" }
+    let hours = minutes / 60
+    if hours == 1 { return "1 hour ago" }
+    if hours < 24 { return "\(hours) hours ago" }
+    let days = hours / 24
+    if days == 1 { return "yesterday" }
+    if days < 7 { return "\(days) days ago" }
+    let f = DateFormatter()
+    f.dateStyle = .medium
+    f.timeStyle = .none
+    return f.string(from: date)
+}
+
 // MARK: - ViewModel
 
 @MainActor
@@ -100,6 +120,11 @@ private class EventDetailViewModel: ObservableObject {
         isSubmittingComment = false
     }
 
+    func deleteComment(_ comment: Comment) {
+        guard let eventId = event.id, let commentId = comment.id else { return }
+        Task { try? await eventService.deleteComment(eventId: eventId, commentId: commentId) }
+    }
+
     func vote(on proposal: Proposal, userId: String, isUpvote: Bool) {
         guard let eventId = event.id, let proposalId = proposal.id else { return }
         let alreadyVoted = isUpvote ? proposal.upvotes.contains(userId) : proposal.downvotes.contains(userId)
@@ -159,6 +184,7 @@ struct EventDetailView: View {
     @StateObject private var viewModel: EventDetailViewModel
     @EnvironmentObject private var appState: AppState
     @State private var showProposeSheet = false
+    @FocusState private var isCommentFocused: Bool
 
     init(event: Event) {
         _viewModel = StateObject(wrappedValue: EventDetailViewModel(event: event))
@@ -169,15 +195,24 @@ struct EventDetailView: View {
     private var isPast: Bool { viewModel.event.date.dateValue() < Date() }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                eventHeaderCard
-                rsvpCard
-                participantsCard
-                commentsCard
-                proposalsCard
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    eventHeaderCard
+                    rsvpCard
+                    participantsCard
+                    commentsCard
+                    proposalsCard
+                }
+                .padding(16)
+                .onTapGesture { isCommentFocused = false }
             }
-            .padding(16)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: isCommentFocused) { _, focused in
+                if focused {
+                    withAnimation { proxy.scrollTo("commentInput", anchor: .bottom) }
+                }
+            }
         }
         .background {
             LinearGradient(
@@ -190,6 +225,12 @@ struct EventDetailView: View {
         .navigationTitle(viewModel.event.place)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { isCommentFocused = false }
+            }
+        }
         .sheet(isPresented: $showProposeSheet) {
             ProposeChangeView { proposedPlace, proposedDate in
                 viewModel.addProposal(
@@ -338,7 +379,11 @@ struct EventDetailView: View {
                 VStack(spacing: 8) {
                     ForEach(viewModel.comments) { comment in
                         CommentRow(
-                            comment: comment, author: viewModel.commentAuthors[comment.userId])
+                            comment: comment,
+                            author: viewModel.commentAuthors[comment.userId],
+                            isOwnComment: comment.userId == currentUserId,
+                            onDelete: { viewModel.deleteComment(comment) }
+                        )
                         if comment.id != viewModel.comments.last?.id {
                             Divider().padding(.leading, 42)
                         }
@@ -354,9 +399,9 @@ struct EventDetailView: View {
                     .padding(10)
                     .background(Color(.systemFill))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .focused($isCommentFocused)
 
-                let isCommentEmpty = viewModel.commentText.trimmingCharacters(in: .whitespaces)
-                    .isEmpty
+                let isCommentEmpty = viewModel.commentText.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
                     viewModel.submitComment(userId: currentUserId)
                 } label: {
@@ -366,6 +411,8 @@ struct EventDetailView: View {
                 }
                 .disabled(isCommentEmpty || viewModel.isSubmittingComment)
             }
+            .id("commentInput")
+            .padding(.bottom, 4)
         }
         .padding(16)
         .background(.ultraThinMaterial)
@@ -464,6 +511,8 @@ private struct RSVPButton: View {
 private struct CommentRow: View {
     let comment: Comment
     let author: User?
+    let isOwnComment: Bool
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -483,12 +532,24 @@ private struct CommentRow: View {
                 Text(comment.text)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(comment.createdAt.dateValue(), style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    Text(relativeTimeString(from: comment.createdAt.dateValue()))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Spacer(minLength: 0)
+
+            if isOwnComment {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+            }
         }
     }
 }

@@ -12,15 +12,29 @@
 		B853B5AA2F59802700400F06 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = B853B5A92F59802700400F06 /* FirebaseCore */; };
 		B853B5AC2F59802700400F06 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = B853B5AB2F59802700400F06 /* FirebaseCrashlytics */; };
 		B853B5AE2F59802700400F06 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B853B5AD2F59802700400F06 /* FirebaseFirestore */; };
+		B8BDEA632F5AF19900A457A2 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = B8BDEA622F5AF19900A457A2 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		B853B5942F597E7800400F06 /* MeetApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeetApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B8BDEA652F5AF1E500A457A2 /* Exceptions for "MeetApp" folder in "MeetApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B853B5932F597E7800400F06 /* MeetApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B853B5962F597E7800400F06 /* MeetApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B8BDEA652F5AF1E500A457A2 /* Exceptions for "MeetApp" folder in "MeetApp" target */,
+			);
 			path = MeetApp;
 			sourceTree = "<group>";
 		};
@@ -31,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B8BDEA632F5AF19900A457A2 /* FirebaseMessaging in Frameworks */,
 				B853B5A62F59802700400F06 /* FirebaseAnalytics in Frameworks */,
 				B853B5AC2F59802700400F06 /* FirebaseCrashlytics in Frameworks */,
 				B853B5AA2F59802700400F06 /* FirebaseCore in Frameworks */,
@@ -46,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				B853B5962F597E7800400F06 /* MeetApp */,
+				B8BDEA612F5AF19900A457A2 /* Frameworks */,
 				B853B5952F597E7800400F06 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -56,6 +72,13 @@
 				B853B5942F597E7800400F06 /* MeetApp.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B8BDEA612F5AF19900A457A2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -83,6 +106,7 @@
 				B853B5A92F59802700400F06 /* FirebaseCore */,
 				B853B5AB2F59802700400F06 /* FirebaseCrashlytics */,
 				B853B5AD2F59802700400F06 /* FirebaseFirestore */,
+				B8BDEA622F5AF19900A457A2 /* FirebaseMessaging */,
 			);
 			productName = MeetApp;
 			productReference = B853B5942F597E7800400F06 /* MeetApp.app */;
@@ -278,6 +302,7 @@
 				DEVELOPMENT_TEAM = H5ZX6S5C2L;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MeetApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -312,6 +337,7 @@
 				DEVELOPMENT_TEAM = H5ZX6S5C2L;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MeetApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -394,6 +420,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B853B5A42F59802700400F06 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		B8BDEA622F5AF19900A457A2 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B853B5A42F59802700400F06 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
