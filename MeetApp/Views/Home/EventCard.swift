@@ -23,7 +23,6 @@ struct EventCard: View {
     let currentUserId: String
     var isOrganizer: Bool = false
     let onStatusChange: (ParticipantStatus) -> Void
-    var onDelete: (() -> Void)? = nil
 
     private var isPast: Bool {
         event.date.dateValue() < Date()
@@ -39,16 +38,26 @@ struct EventCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Place and date — pad trailing to leave room for the X button
-            VStack(alignment: .leading, spacing: 4) {
-                Text(event.place)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(formatEventDate(event.date.dateValue()))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(event.place)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(formatEventDate(event.date.dateValue()))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isOrganizer {
+                    Text("Host")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.08))
+                        .foregroundStyle(.secondary)
+                        .clipShape(Capsule())
+                }
             }
-            .padding(.trailing, isOrganizer ? 24 : 0)
 
             // Metadata row
             HStack(spacing: 12) {
@@ -113,17 +122,6 @@ struct EventCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         )
-        .overlay(alignment: .topTrailing) {
-            if let onDelete, isOrganizer {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.subheadline)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
-                    .padding(10)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(TapGesture().onEnded { onDelete() })
-            }
-        }
     }
 }
 

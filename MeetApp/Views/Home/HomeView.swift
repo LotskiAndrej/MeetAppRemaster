@@ -272,8 +272,7 @@ struct HomeView: View {
                     guard let eventId = event.id else { return }
                     viewModel.updateParticipantStatus(
                         eventId: eventId, userId: currentUserId, status: status)
-                },
-                onDelete: isOrganizer ? { eventToDelete = event } : nil
+                }
             )
         }
         .buttonStyle(.plain)

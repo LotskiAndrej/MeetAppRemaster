@@ -225,25 +225,133 @@ struct EventDetailView: View {
     private var isPast: Bool { viewModel.event.date.dateValue() < Date() }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 16) {
-                    eventHeaderCard
-                    rsvpCard
-                    if !viewModel.attendees.isEmpty || !viewModel.notGoingAttendees.isEmpty { participantsCard }
-                    commentsCard
-                    if !viewModel.proposals.isEmpty { proposalsCard }
+        List {
+                eventHeaderCard
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 8, trailing: 16))
+
+                rsvpCard
+                    .buttonStyle(.borderless)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
+
+                if !viewModel.attendees.isEmpty || !viewModel.notGoingAttendees.isEmpty {
+                    Section {
+                        ForEach(viewModel.attendees) { user in
+                            HStack(spacing: 12) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text(user.fullName)
+                                    .font(.subheadline)
+                                Spacer()
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparatorTint(Color.primary.opacity(0.08))
+                        }
+                        ForEach(viewModel.notGoingAttendees) { user in
+                            HStack(spacing: 12) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.red.opacity(0.5))
+                                Text(user.fullName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparatorTint(Color.primary.opacity(0.08))
+                        }
+                    } header: {
+                        HStack(spacing: 12) {
+                            if !viewModel.attendees.isEmpty {
+                                Label("Going (\(viewModel.attendees.count))", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
+                            if !viewModel.notGoingAttendees.isEmpty {
+                                Label("Not Going (\(viewModel.notGoingAttendees.count))", systemImage: "xmark.circle.fill")
+                                    .foregroundStyle(.red.opacity(0.7))
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .textCase(nil)
+                    }
+                    .listSectionSeparator(.hidden)
                 }
-                .padding(16)
-                .onTapGesture { isCommentFocused = false }
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: isCommentFocused) { _, focused in
-                if focused {
-                    withAnimation { proxy.scrollTo("commentInput", anchor: .bottom) }
+
+                Section {
+                    if viewModel.comments.isEmpty {
+                        Text("No comments yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 8)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(viewModel.comments) { comment in
+                            CommentRow(
+                                comment: comment,
+                                author: viewModel.commentAuthors[comment.userId]
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                if comment.userId == currentUserId {
+                                    Button(role: .destructive) {
+                                        viewModel.deleteComment(comment)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparatorTint(Color.primary.opacity(0.08))
+                        }
+                    }
+
+                    commentInputRow
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                } header: {
+                    Text("Comments")
+                        .font(.headline)
+                        .textCase(nil)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .listSectionSeparator(.hidden)
+
+                if !viewModel.proposals.isEmpty {
+                    Section {
+                        ForEach(viewModel.proposals) { proposal in
+                            ProposalRow(
+                                proposal: proposal,
+                                currentUserId: currentUserId,
+                                isOrganizer: isOrganizer,
+                                isPast: isPast,
+                                onVote: { isUpvote in
+                                    viewModel.vote(on: proposal, userId: currentUserId, isUpvote: isUpvote)
+                                },
+                                onAccept: { viewModel.accept(proposal: proposal) },
+                                onDeny: { viewModel.reject(proposal: proposal) }
+                            )
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        }
+                    } header: {
+                        Text("Proposals")
+                            .font(.headline)
+                            .textCase(nil)
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .listSectionSeparator(.hidden)
                 }
             }
-        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .background {
             LinearGradient(
                 colors: [Color(.systemBackground), Color(.systemGray6)],
@@ -360,167 +468,27 @@ struct EventDetailView: View {
         )
     }
 
-    // MARK: - Participants Card
+    // MARK: - Comment Input Row
 
-    private var participantsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                if !viewModel.attendees.isEmpty {
-                    Text("Going (\(viewModel.attendees.count))")
-                        .foregroundStyle(.green)
-                }
-                if !viewModel.notGoingAttendees.isEmpty {
-                    Text("Not Going (\(viewModel.notGoingAttendees.count))")
-                        .foregroundStyle(.red.opacity(0.7))
-                }
-            }
-            .font(.headline)
+    private var commentInputRow: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Add a comment…", text: $viewModel.commentText, axis: .vertical)
+                .lineLimit(1...4)
+                .padding(10)
+                .background(Color(.systemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .focused($isCommentFocused)
 
-            if !viewModel.attendees.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(viewModel.attendees) { user in
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.green.opacity(0.8))
-                            Text(user.fullName)
-                                .font(.subheadline)
-                                .foregroundStyle(.green)
-                            Spacer()
-                        }
-                    }
-                }
+            let isCommentEmpty = viewModel.commentText.trimmingCharacters(in: .whitespaces).isEmpty
+            Button {
+                viewModel.submitComment(userId: currentUserId)
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(isCommentEmpty ? Color.secondary : Color.primary)
             }
-
-            if !viewModel.notGoingAttendees.isEmpty {
-                if !viewModel.attendees.isEmpty { Divider() }
-                VStack(spacing: 8) {
-                    ForEach(viewModel.notGoingAttendees) { user in
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.red.opacity(0.4))
-                            Text(user.fullName)
-                                .font(.subheadline)
-                                .foregroundStyle(.red.opacity(0.5))
-                            Spacer()
-                        }
-                    }
-                }
-            }
+            .disabled(isCommentEmpty || viewModel.isSubmittingComment)
         }
-        .padding(16)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    // MARK: - Comments Card
-
-    private var commentsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Comments")
-                .font(.headline)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
-
-            if viewModel.comments.isEmpty {
-                Text("No comments yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 4)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(viewModel.comments) { comment in
-                        CommentRow(
-                            comment: comment,
-                            author: viewModel.commentAuthors[comment.userId],
-                            canDelete: comment.userId == currentUserId,
-                            onDelete: { viewModel.deleteComment(comment) }
-                        )
-                        if comment.id != viewModel.comments.last?.id {
-                            Divider()
-                                .padding(.horizontal, 16)
-                        }
-                    }
-                }
-            }
-
-            Divider()
-                .padding(.horizontal, 16)
-
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Add a comment…", text: $viewModel.commentText, axis: .vertical)
-                    .lineLimit(1...4)
-                    .padding(10)
-                    .background(Color(.systemFill))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .focused($isCommentFocused)
-
-                let isCommentEmpty = viewModel.commentText.trimmingCharacters(in: .whitespaces).isEmpty
-                Button {
-                    viewModel.submitComment(userId: currentUserId)
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(isCommentEmpty ? Color.secondary : Color.primary)
-                }
-                .disabled(isCommentEmpty || viewModel.isSubmittingComment)
-            }
-            .id("commentInput")
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    // MARK: - Proposals Card
-
-    private var proposalsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Proposals")
-                .font(.headline)
-
-            VStack(spacing: 10) {
-                ForEach(viewModel.proposals) { proposal in
-                    ProposalRow(
-                        proposal: proposal,
-                        currentUserId: currentUserId,
-                        isOrganizer: isOrganizer,
-                        isPast: isPast,
-                        onVote: { isUpvote in
-                            viewModel.vote(
-                                on: proposal, userId: currentUserId, isUpvote: isUpvote)
-                        },
-                        onAccept: {
-                            viewModel.accept(proposal: proposal)
-                        },
-                        onDeny: {
-                            viewModel.reject(proposal: proposal)
-                        }
-                    )
-                }
-            }
-        }
-        .padding(16)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
     }
 }
 
@@ -555,75 +523,33 @@ private struct RSVPButton: View {
 private struct CommentRow: View {
     let comment: Comment
     let author: User?
-    var canDelete: Bool = false
-    var onDelete: () -> Void = {}
-
-    @State private var dragOffset: CGFloat = 0
-    private let deleteButtonWidth: CGFloat = 72
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            if canDelete && dragOffset < 0 {
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
-                    onDelete()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.white)
-                        .frame(maxHeight: .infinity)
-                        .frame(width: min(deleteButtonWidth, -dragOffset))
-                        .background(Color.red)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "person.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                if let author {
+                    Text(author.fullName)
+                        .font(.caption.bold())
+                } else {
+                    Text("Loading...")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-            }
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "person.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    if let author {
-                        Text(author.fullName)
-                            .font(.caption.bold())
-                    } else {
-                        Text("Loading...")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(comment.text)
-                        .font(.subheadline)
-                        .fixedSize(horizontal: false, vertical: true)
-                    TimelineView(.periodic(from: .now, by: 60)) { _ in
-                        Text(relativeTimeString(from: comment.createdAt.dateValue()))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                Text(comment.text)
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    Text(relativeTimeString(from: comment.createdAt.dateValue()))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
-                Spacer(minLength: 0)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 16)
-            .offset(x: dragOffset)
+            Spacer(minLength: 0)
         }
-        .clipped()
-        .gesture(
-            canDelete ? DragGesture(minimumDistance: 15, coordinateSpace: .local)
-                .onChanged { value in
-                    let x = value.translation.width
-                    if x < 0 {
-                        dragOffset = max(x, -deleteButtonWidth)
-                    } else if dragOffset < 0 {
-                        dragOffset = min(0, dragOffset + x)
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        dragOffset = (-dragOffset) > deleteButtonWidth / 2 ? -deleteButtonWidth : 0
-                    }
-                }
-            : nil
-        )
+        .padding(.vertical, 4)
     }
 }
 
