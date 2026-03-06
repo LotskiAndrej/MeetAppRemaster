@@ -102,10 +102,14 @@ private class EventDetailViewModel: ObservableObject {
 
     func vote(on proposal: Proposal, userId: String, isUpvote: Bool) {
         guard let eventId = event.id, let proposalId = proposal.id else { return }
+        let alreadyVoted = isUpvote ? proposal.upvotes.contains(userId) : proposal.downvotes.contains(userId)
         Task {
-            try? await eventService.voteOnProposal(
-                eventId: eventId, proposalId: proposalId, userId: userId, isUpvote: isUpvote
-            )
+            if alreadyVoted {
+                try? await eventService.removeVote(eventId: eventId, proposalId: proposalId, userId: userId)
+            } else {
+                try? await eventService.voteOnProposal(
+                    eventId: eventId, proposalId: proposalId, userId: userId, isUpvote: isUpvote)
+            }
         }
     }
 
@@ -115,6 +119,13 @@ private class EventDetailViewModel: ObservableObject {
             try? await eventService.acceptProposal(eventId: eventId, proposal: proposal)
             if let place = proposal.proposedPlace { event.place = place }
             if let date = proposal.proposedDate { event.date = date }
+        }
+    }
+
+    func reject(proposal: Proposal) {
+        guard let eventId = event.id, let proposalId = proposal.id else { return }
+        Task {
+            try? await eventService.rejectProposal(eventId: eventId, proposalId: proposalId)
         }
     }
 
@@ -157,13 +168,6 @@ struct EventDetailView: View {
     private var isOrganizer: Bool { currentUserId == viewModel.event.organizerId }
     private var isPast: Bool { viewModel.event.date.dateValue() < Date() }
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .long
-        f.timeStyle = .short
-        return f
-    }()
-
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -181,7 +185,7 @@ struct EventDetailView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: .bottom)
         }
         .navigationTitle(viewModel.event.place)
         .navigationBarTitleDisplayMode(.inline)
@@ -205,14 +209,13 @@ struct EventDetailView: View {
     private var eventHeaderCard: some View {
         let going = viewModel.event.participants.values.filter { $0 == .going }.count
         let notGoing = viewModel.event.participants.values.filter { $0 == .notGoing }.count
-        let pending = viewModel.event.participants.values.filter { $0 == .pending }.count
 
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(viewModel.event.place)
                         .font(.title2.bold())
-                    Text(Self.dateFormatter.string(from: viewModel.event.date.dateValue()))
+                    Text(formatEventDate(viewModel.event.date.dateValue()))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -235,10 +238,6 @@ struct EventDetailView: View {
                     .foregroundStyle(.green)
                 Label("\(notGoing) not going", systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
-                if pending > 0 {
-                    Label("\(pending) pending", systemImage: "clock")
-                        .foregroundStyle(.orange)
-                }
             }
             .font(.caption)
         }
@@ -259,17 +258,21 @@ struct EventDetailView: View {
                 title: "Going",
                 systemImage: "checkmark",
                 isSelected: viewModel.event.participants[currentUserId] == .going,
-                isDisabled: isPast
+                isDisabled: isPast,
+                selectedColor: .green
             ) {
-                viewModel.updateParticipantStatus(userId: currentUserId, status: .going)
+                let newStatus: ParticipantStatus = viewModel.event.participants[currentUserId] == .going ? .pending : .going
+                viewModel.updateParticipantStatus(userId: currentUserId, status: newStatus)
             }
             RSVPButton(
                 title: "Not Going",
                 systemImage: "xmark",
                 isSelected: viewModel.event.participants[currentUserId] == .notGoing,
-                isDisabled: isPast
+                isDisabled: isPast,
+                selectedColor: .red
             ) {
-                viewModel.updateParticipantStatus(userId: currentUserId, status: .notGoing)
+                let newStatus: ParticipantStatus = viewModel.event.participants[currentUserId] == .notGoing ? .pending : .notGoing
+                viewModel.updateParticipantStatus(userId: currentUserId, status: newStatus)
             }
         }
         .padding(16)
@@ -411,6 +414,9 @@ struct EventDetailView: View {
                             },
                             onAccept: {
                                 viewModel.accept(proposal: proposal)
+                            },
+                            onDeny: {
+                                viewModel.reject(proposal: proposal)
                             }
                         )
                     }
@@ -434,6 +440,7 @@ private struct RSVPButton: View {
     let systemImage: String
     let isSelected: Bool
     let isDisabled: Bool
+    let selectedColor: Color
     let action: () -> Void
 
     var body: some View {
@@ -442,8 +449,8 @@ private struct RSVPButton: View {
                 .font(.subheadline.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(isSelected ? Color.primary : Color.primary.opacity(0.08))
-                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : .primary)
+                .background(isSelected ? selectedColor : selectedColor.opacity(0.1))
+                .foregroundStyle(isSelected ? Color.white : selectedColor)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .disabled(isDisabled)
@@ -495,17 +502,12 @@ private struct ProposalRow: View {
     let isPast: Bool
     let onVote: (Bool) -> Void
     let onAccept: () -> Void
+    let onDeny: () -> Void
 
     private var hasUpvoted: Bool { proposal.upvotes.contains(currentUserId) }
     private var hasDownvoted: Bool { proposal.downvotes.contains(currentUserId) }
     private var isAccepted: Bool { proposal.status == .accepted }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
+    private var isRejected: Bool { proposal.status == .rejected }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -514,7 +516,7 @@ private struct ProposalRow: View {
                     .font(.subheadline)
             }
             if let date = proposal.proposedDate {
-                Label(Self.dateFormatter.string(from: date.dateValue()), systemImage: "calendar")
+                Label(formatEventDate(date.dateValue()), systemImage: "calendar")
                     .font(.subheadline)
             }
 
@@ -529,7 +531,7 @@ private struct ProposalRow: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(hasUpvoted ? .green : .secondary)
                 }
-                .disabled(isPast || isAccepted)
+                .disabled(isPast || isAccepted || isRejected)
 
                 Button {
                     onVote(false)
@@ -541,7 +543,7 @@ private struct ProposalRow: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(hasDownvoted ? .red : .secondary)
                 }
-                .disabled(isPast || isAccepted)
+                .disabled(isPast || isAccepted || isRejected)
 
                 Spacer()
 
@@ -549,6 +551,10 @@ private struct ProposalRow: View {
                     Label("Accepted", systemImage: "checkmark.circle.fill")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.green)
+                } else if isRejected {
+                    Label("Denied", systemImage: "xmark.circle.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.red)
                 } else if isOrganizer && !isPast {
                     Button(action: onAccept) {
                         Text("Accept")
@@ -559,11 +565,24 @@ private struct ProposalRow: View {
                             .foregroundStyle(Color(uiColor: .systemBackground))
                             .clipShape(Capsule())
                     }
+                    Button(action: onDeny) {
+                        Text("Deny")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.12))
+                            .foregroundStyle(.red)
+                            .clipShape(Capsule())
+                    }
                 }
             }
         }
         .padding(12)
-        .background(isAccepted ? Color.green.opacity(0.08) : Color(.systemFill))
+        .background(
+            isAccepted ? Color.green.opacity(0.08) :
+            isRejected ? Color.red.opacity(0.06) :
+            Color(.systemFill)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

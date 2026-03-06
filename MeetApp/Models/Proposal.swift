@@ -3,6 +3,7 @@ import FirebaseFirestore
 enum ProposalStatus: String, Codable {
     case pending
     case accepted
+    case rejected
 }
 
 struct Proposal: Codable, Identifiable {

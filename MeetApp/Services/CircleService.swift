@@ -56,6 +56,16 @@ class CircleService {
             }
     }
 
+    /// Removes a member from the circle and removes the circle from the user's circleIds.
+    func kickMember(circleId: String, userId: String) async throws {
+        try await db.collection("circles").document(circleId).updateData([
+            "memberIds": FieldValue.arrayRemove([userId])
+        ])
+        try await db.collection("users").document(userId).updateData([
+            "circleIds": FieldValue.arrayRemove([circleId])
+        ])
+    }
+
     private func generateInviteCode() -> String {
         let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<6).map { _ in chars.randomElement()! })

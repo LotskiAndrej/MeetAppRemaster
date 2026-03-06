@@ -6,11 +6,11 @@ class EventService {
 
     // MARK: - Events
 
-    /// Real-time listener for all events in a circle, ordered by date.
+    /// Real-time listener for all events in a circle, ordered by creation time (newest first).
     func listenToEvents(circleId: String, completion: @escaping ([Event]) -> Void) -> ListenerRegistration {
         db.collection("events")
             .whereField("circleId", isEqualTo: circleId)
-            .order(by: "date")
+            .order(by: "createdAt", descending: true)
             .addSnapshotListener { snapshot, _ in
                 let events = snapshot?.documents.compactMap { try? $0.data(as: Event.self) } ?? []
                 completion(events)
@@ -92,6 +92,14 @@ class EventService {
         }
     }
 
+    func removeVote(eventId: String, proposalId: String, userId: String) async throws {
+        let ref = db.collection("events").document(eventId).collection("proposals").document(proposalId)
+        try await ref.updateData([
+            "upvotes": FieldValue.arrayRemove([userId]),
+            "downvotes": FieldValue.arrayRemove([userId])
+        ])
+    }
+
     /// Accepts a proposal: marks it accepted and updates the parent event's place/date.
     func acceptProposal(eventId: String, proposal: Proposal) async throws {
         guard let proposalId = proposal.id else { return }
@@ -105,5 +113,11 @@ class EventService {
         if !eventUpdates.isEmpty {
             try await db.collection("events").document(eventId).updateData(eventUpdates)
         }
+    }
+
+    func rejectProposal(eventId: String, proposalId: String) async throws {
+        try await db.collection("events").document(eventId)
+            .collection("proposals").document(proposalId)
+            .updateData(["status": ProposalStatus.rejected.rawValue])
     }
 }

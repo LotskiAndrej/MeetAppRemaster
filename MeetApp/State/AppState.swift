@@ -16,6 +16,7 @@ class AppState: ObservableObject {
     private var userListener: ListenerRegistration?
     private var circlesListener: ListenerRegistration?
     private var cancellables = Set<AnyCancellable>()
+    private let selectedCircleKey = "selectedCircleId"
 
     init() {
         authService.$currentUser
@@ -40,6 +41,7 @@ class AppState: ObservableObject {
 
     func setActiveCircle(_ circle: FriendCircle) {
         activeCircle = circle
+        UserDefaults.standard.set(circle.id, forKey: selectedCircleKey)
     }
 
     private func startListeningToUser(uid: String) {
@@ -58,7 +60,8 @@ class AppState: ObservableObject {
                 guard let self else { return }
                 self.circles = circles
                 if self.activeCircle == nil {
-                    self.activeCircle = circles.first
+                    let savedId = UserDefaults.standard.string(forKey: self.selectedCircleKey)
+                    self.activeCircle = circles.first(where: { $0.id == savedId }) ?? circles.first
                 } else if let active = self.activeCircle, !circles.contains(where: { $0.id == active.id }) {
                     self.activeCircle = circles.first
                 }

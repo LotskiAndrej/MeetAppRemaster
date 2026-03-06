@@ -1,6 +1,21 @@
 import SwiftUI
 import FirebaseFirestore
 
+/// Returns a human-friendly date string: "Today, 14:30", "Tomorrow, …", "Yesterday, …", or a medium date otherwise.
+func formatEventDate(_ date: Date) -> String {
+    let cal = Calendar.current
+    let tf = DateFormatter()
+    tf.dateFormat = "HH:mm"
+    let time = tf.string(from: date)
+    if cal.isDateInToday(date)     { return "Today, \(time)" }
+    if cal.isDateInTomorrow(date)  { return "Tomorrow, \(time)" }
+    if cal.isDateInYesterday(date) { return "Yesterday, \(time)" }
+    let f = DateFormatter()
+    f.dateStyle = .medium
+    f.timeStyle = .short
+    return f.string(from: date)
+}
+
 struct EventCard: View {
     let event: Event
     let commentCount: Int
@@ -16,12 +31,9 @@ struct EventCard: View {
         event.participants[currentUserId]
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
+    private var goingCount: Int {
+        event.participants.values.filter { $0 == .going }.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -30,13 +42,16 @@ struct EventCard: View {
                 Text(event.place)
                     .font(.headline)
                     .foregroundStyle(.primary)
-                Text(Self.dateFormatter.string(from: event.date.dateValue()))
+                Text(formatEventDate(event.date.dateValue()))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
             // Metadata row
             HStack(spacing: 16) {
+                Label("\(goingCount) going", systemImage: "person.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
                 if commentCount > 0 {
                     Label("\(commentCount)", systemImage: "bubble.left")
                         .font(.caption)
@@ -62,17 +77,19 @@ struct EventCard: View {
                     title: "Going",
                     systemImage: "checkmark",
                     isSelected: currentStatus == .going,
-                    isDisabled: isPast
+                    isDisabled: isPast,
+                    selectedColor: .green
                 ) {
-                    onStatusChange(.going)
+                    onStatusChange(currentStatus == .going ? .pending : .going)
                 }
                 RSVPButton(
                     title: "Not Going",
                     systemImage: "xmark",
                     isSelected: currentStatus == .notGoing,
-                    isDisabled: isPast
+                    isDisabled: isPast,
+                    selectedColor: .red
                 ) {
-                    onStatusChange(.notGoing)
+                    onStatusChange(currentStatus == .notGoing ? .pending : .notGoing)
                 }
             }
         }
@@ -91,6 +108,7 @@ private struct RSVPButton: View {
     let systemImage: String
     let isSelected: Bool
     let isDisabled: Bool
+    let selectedColor: Color
     let action: () -> Void
 
     var body: some View {
@@ -99,8 +117,8 @@ private struct RSVPButton: View {
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.primary : Color.primary.opacity(0.08))
-                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : .primary)
+                .background(isSelected ? selectedColor : selectedColor.opacity(0.1))
+                .foregroundStyle(isSelected ? Color.white : selectedColor)
                 .clipShape(Capsule())
         }
         .disabled(isDisabled)

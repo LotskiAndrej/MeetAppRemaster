@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var tabManager: TabManager
     @State private var showCreateCircle = false
     @State private var showJoinCircle = false
 
@@ -26,6 +27,7 @@ struct MenuView: View {
                             ForEach(appState.circles) { circle in
                                 Button {
                                     appState.setActiveCircle(circle)
+                                    tabManager.selectedTab = 0
                                 } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {

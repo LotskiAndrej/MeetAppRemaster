@@ -78,26 +78,58 @@ struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var navigationManager: NavigationManager
     @StateObject private var viewModel = HomeViewModel()
+    @State private var showCreateEvent = false
+    @State private var showMembers = false
 
     var body: some View {
         NavigationStack(path: $navigationManager.homePath) {
-            ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.systemGray6)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                content
-            }
-            .navigationTitle(appState.activeCircle?.name ?? "Events")
-            .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(for: HomeDestination.self) { destination in
-                switch destination {
-                case .eventDetail(let event):
-                    EventDetailView(event: event)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    LinearGradient(
+                        colors: [Color(.systemBackground), Color(.systemGray6)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
                 }
+                .navigationTitle(appState.activeCircle?.name ?? "Events")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    if appState.activeCircle != nil {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showMembers = true
+                            } label: {
+                                Image(systemName: "person.2")
+                            }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showCreateEvent = true
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                        }
+                    }
+                }
+                .navigationDestination(for: HomeDestination.self) { destination in
+                    switch destination {
+                    case .eventDetail(let event):
+                        EventDetailView(event: event)
+                    }
+                }
+        }
+        .sheet(isPresented: $showCreateEvent) {
+            CreateEventView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showMembers) {
+            if let circle = appState.activeCircle {
+                CircleMembersSheet(
+                    circle: circle,
+                    currentUserId: appState.authService.currentUser?.uid ?? ""
+                )
             }
         }
         .onChange(of: appState.activeCircle?.id) { _, circleId in
@@ -157,13 +189,100 @@ struct HomeView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .refreshable {
-                if let id = appState.activeCircle?.id {
-                    viewModel.listenToEvents(in: id)
-                    // Add a tiny delay so the spinner actually shows instead of instantly disappearing
-                    try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+    }
+}
+
+// MARK: - Circle Members Sheet
+
+private struct CircleMembersSheet: View {
+    let circle: FriendCircle
+    let currentUserId: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var members: [User] = []
+    @State private var isLoading = true
+    @State private var userToKick: User?
+
+    private let userService = UserService()
+    private let circleService = CircleService()
+
+    private var isAdmin: Bool { circle.adminId == currentUserId }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(members) { member in
+                        HStack {
+                            Image(systemName: "person.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                            Text(member.fullName)
+                            Spacer()
+                            if member.id == circle.adminId {
+                                Text("Admin")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if isAdmin && member.id != currentUserId && member.id != circle.adminId {
+                                Button(role: .destructive) {
+                                    userToKick = member
+                                } label: {
+                                    Label("Remove", systemImage: "person.badge.minus")
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            .navigationTitle("Members (\(circle.memberIds.count))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .alert("Remove Member", isPresented: Binding(
+                get: { userToKick != nil },
+                set: { if !$0 { userToKick = nil } }
+            )) {
+                Button("Remove", role: .destructive) {
+                    guard let user = userToKick, let circleId = circle.id, let uid = user.id else {
+                        return
+                    }
+                    Task { try? await circleService.kickMember(circleId: circleId, userId: uid) }
+                    userToKick = nil
+                }
+                Button("Cancel", role: .cancel) { userToKick = nil }
+            } message: {
+                if let user = userToKick {
+                    Text("Remove \(user.fullName) from \(circle.name)?")
+                }
+            }
+            .task { await loadMembers() }
         }
+    }
+
+    private func loadMembers() async {
+        isLoading = true
+        var loaded: [User] = []
+        for uid in circle.memberIds {
+            if let user = try? await userService.fetchUser(uid: uid) {
+                loaded.append(user)
+            }
+        }
+        loaded.sort {
+            if $0.id == circle.adminId { return true }
+            if $1.id == circle.adminId { return false }
+            return $0.fullName < $1.fullName
+        }
+        members = loaded
+        isLoading = false
     }
 }
