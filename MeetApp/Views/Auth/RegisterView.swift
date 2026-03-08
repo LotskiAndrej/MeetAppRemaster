@@ -106,6 +106,7 @@ struct RegisterView: View {
                 }
                 .padding()
             }
+            .scrollIndicators(.hidden)
         }
         .navigationTitle("Register")
         .navigationBarTitleDisplayMode(.inline)

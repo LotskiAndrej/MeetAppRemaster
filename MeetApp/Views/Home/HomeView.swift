@@ -57,7 +57,7 @@ private class HomeViewModel: ObservableObject {
                     self.proposalListeners[id]?.remove()
                     self.proposalListeners.removeValue(forKey: id)
                 }
-                self.events = events
+                withAnimation(.easeInOut(duration: 0.3)) { self.events = events }
                 for event in events {
                     guard let id = event.id else { continue }
                     self.listenToCommentCount(eventId: id)
@@ -117,7 +117,6 @@ struct HomeView: View {
     @AppStorage("pastEventsSectionExpanded") private var pastSectionExpanded = false
     @State private var showCreateEvent = false
     @State private var showMembers = false
-    @State private var eventToDelete: Event?
 
     private var currentUserId: String { appState.authService.currentUser?.uid ?? "" }
 
@@ -153,22 +152,6 @@ struct HomeView: View {
                     switch destination {
                     case .eventDetail(let event):
                         EventDetailView(event: event)
-                    }
-                }
-                .alert("Delete Event", isPresented: Binding(
-                    get: { eventToDelete != nil },
-                    set: { if !$0 { eventToDelete = nil } }
-                )) {
-                    Button("Delete", role: .destructive) {
-                        if let event = eventToDelete {
-                            viewModel.deleteEvent(event)
-                        }
-                        eventToDelete = nil
-                    }
-                    Button("Cancel", role: .cancel) { eventToDelete = nil }
-                } message: {
-                    if let event = eventToDelete {
-                        Text("Delete the event at \(event.place)? Going attendees will be notified.")
                     }
                 }
         }
@@ -227,14 +210,12 @@ struct HomeView: View {
 
                 if !viewModel.pastEvents.isEmpty {
                     Section {
-                        if pastSectionExpanded {
-                            ForEach(viewModel.pastEvents) { event in
-                                eventRow(for: event)
-                            }
+                        ForEach(pastSectionExpanded ? viewModel.pastEvents : []) { event in
+                            eventRow(for: event)
                         }
                     } header: {
                         Button {
-                            withAnimation { pastSectionExpanded.toggle() }
+                            pastSectionExpanded.toggle()
                         } label: {
                             HStack {
                                 Text("Past Events")
@@ -242,10 +223,14 @@ struct HomeView: View {
                                     .fontWeight(.semibold)
                                     .textCase(nil)
                                 Spacer()
-                                Image(systemName: pastSectionExpanded ? "chevron.up" : "chevron.down")
+                                Image(systemName: "chevron.down")
                                     .font(.caption)
+                                    .rotationEffect(.degrees(pastSectionExpanded ? 180 : 0))
+                                    .animation(.easeInOut(duration: 0.25), value: pastSectionExpanded)
                             }
                             .foregroundStyle(.secondary)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -253,41 +238,74 @@ struct HomeView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
+            .animation(.easeInOut(duration: 0.25), value: pastSectionExpanded)
         }
     }
 
     @ViewBuilder
     private func eventRow(for event: Event) -> some View {
-        let isOrganizer = event.organizerId == currentUserId
-        Button {
-            navigationManager.homePath.append(HomeDestination.eventDetail(event))
-        } label: {
+        EventRowView(
+            event: event,
+            commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
+            pendingProposalCount: viewModel.pendingProposalCounts[event.id ?? ""] ?? 0,
+            currentUserId: currentUserId,
+            isOrganizer: event.organizerId == currentUserId,
+            onStatusChange: { status in
+                guard let eventId = event.id else { return }
+                viewModel.updateParticipantStatus(eventId: eventId, userId: currentUserId, status: status)
+            },
+            onDelete: { viewModel.deleteEvent(event) },
+            onNavigate: { navigationManager.homePath.append(HomeDestination.eventDetail(event)) }
+        )
+    }
+}
+
+// MARK: - EventRowView
+
+private struct EventRowView: View {
+    let event: Event
+    let commentCount: Int
+    let pendingProposalCount: Int
+    let currentUserId: String
+    let isOrganizer: Bool
+    let onStatusChange: (ParticipantStatus) -> Void
+    let onDelete: () -> Void
+    let onNavigate: () -> Void
+
+    @State private var showDeleteAlert = false
+
+    var body: some View {
+        Button(action: onNavigate) {
             EventCard(
                 event: event,
-                commentCount: viewModel.commentCounts[event.id ?? ""] ?? 0,
-                pendingProposalCount: viewModel.pendingProposalCounts[event.id ?? ""] ?? 0,
+                commentCount: commentCount,
+                pendingProposalCount: pendingProposalCount,
                 currentUserId: currentUserId,
                 isOrganizer: isOrganizer,
-                onStatusChange: { status in
-                    guard let eventId = event.id else { return }
-                    viewModel.updateParticipantStatus(
-                        eventId: eventId, userId: currentUserId, status: status)
-                }
+                onStatusChange: onStatusChange
             )
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if isOrganizer {
-                Button(role: .destructive) {
-                    eventToDelete = event
+                Button {
+                    showDeleteAlert = true
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .tint(.red)
             }
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+        .alert("Delete Event", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) { onDelete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete the event at \(event.place)? Going attendees will be notified.")
+        }
     }
 }
 

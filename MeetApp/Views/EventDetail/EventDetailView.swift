@@ -51,19 +51,27 @@ private class EventDetailViewModel: ObservableObject {
         eventListener = eventService.listenToEvent(eventId: eventId) { [weak self] updatedEvent in
             Task { @MainActor [weak self] in
                 guard let self, let updatedEvent else { return }
-                self.event = updatedEvent
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.event = updatedEvent
+                }
                 self.loadAttendees()
             }
         }
         commentsListener = eventService.listenToComments(eventId: eventId) { [weak self] comments in
             Task { @MainActor [weak self] in
-                self?.comments = comments
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self?.comments = comments.reversed()
+                }
                 self?.fetchCommentAuthors(for: comments)
             }
         }
         proposalsListener = eventService.listenToProposals(eventId: eventId) {
             [weak self] proposals in
-            Task { @MainActor [weak self] in self?.proposals = proposals }
+            Task { @MainActor [weak self] in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self?.proposals = proposals.reversed()
+                }
+            }
         }
         loadAttendees()
     }
@@ -163,8 +171,6 @@ private class EventDetailViewModel: ObservableObject {
         guard let eventId = event.id else { return }
         Task {
             try? await eventService.acceptProposal(eventId: eventId, proposal: proposal)
-            if let place = proposal.proposedPlace { event.place = place }
-            if let date = proposal.proposedDate { event.date = date }
         }
     }
 
@@ -288,8 +294,9 @@ struct EventDetailView: View {
                             .padding(.vertical, 8)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else {
-                        ForEach(viewModel.comments) { comment in
+                        ForEach(Array(viewModel.comments.enumerated()), id: \.element.id) { index, comment in
                             CommentRow(
                                 comment: comment,
                                 author: viewModel.commentAuthors[comment.userId]
@@ -304,7 +311,9 @@ struct EventDetailView: View {
                                 }
                             }
                             .listRowBackground(Color.clear)
+                            .listRowSeparator(index == viewModel.comments.count - 1 ? .hidden : .visible)
                             .listRowSeparatorTint(Color.primary.opacity(0.08))
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
 
@@ -351,7 +360,9 @@ struct EventDetailView: View {
             }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .contentMargins(.bottom, 24, for: .scrollContent)
         .background {
             LinearGradient(
                 colors: [Color(.systemBackground), Color(.systemGray6)],
@@ -636,6 +647,7 @@ private struct ProposalRow: View {
                     }
                 }
             }
+            .buttonStyle(.borderless)
         }
         .padding(12)
         .background(
