@@ -147,53 +147,7 @@ exports.onProposalCreated = onDocumentCreated(
 );
 
 // ---------------------------------------------------------------------------
-// 4. Proposal accepted / denied → notify all going users
-// ---------------------------------------------------------------------------
-
-exports.onProposalUpdated = onDocumentUpdated(
-  'events/{eventId}/proposals/{proposalId}',
-  async (event) => {
-    const before = event.data.before.data();
-    const after = event.data.after.data();
-
-    if (before.status === after.status) return;
-    if (after.status !== 'accepted' && after.status !== 'rejected') return;
-
-    const { eventId } = event.params;
-    const eventSnap = await db.collection('events').doc(eventId).get();
-    const eventData = eventSnap.data();
-    if (!eventData) return;
-
-    const participants = eventData.participants ?? {};
-    // Exclude the organizer — they made the decision, no need to notify themselves.
-    const goingIds = Object.entries(participants)
-      .filter(([uid, status]) => status === 'going' && uid !== eventData.organizerId)
-      .map(([uid]) => uid);
-
-    const action = after.status === 'accepted' ? 'accepted' : 'denied';
-    const changeDesc = after.proposedPlace
-      ? `New place: ${after.proposedPlace}`
-      : 'Date change';
-
-    const [circleName, tokens] = await Promise.all([
-      getCircleName(eventData.circleId),
-      getTokensForUsers(goingIds),
-    ]);
-
-    await sendNotification(
-      tokens,
-      `Proposal ${action} for ${eventData.place} (${circleName})`,
-      changeDesc
-    );
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 5. User taps Going → notify the other users who are already going
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 6. Event deleted → notify going users (except organizer)
+// 4. Event deleted → notify going users (except organizer)
 // ---------------------------------------------------------------------------
 
 exports.onEventDeleted = onDocumentDeleted('events/{eventId}', async (event) => {
@@ -219,7 +173,7 @@ exports.onEventDeleted = onDocumentDeleted('events/{eventId}', async (event) => 
 });
 
 // ---------------------------------------------------------------------------
-// 5. User taps Going → notify the other users who are already going
+// 5. Event updated (place/date change, new attendee) → notify going users
 // ---------------------------------------------------------------------------
 
 exports.onEventUpdated = onDocumentUpdated('events/{eventId}', async (event) => {

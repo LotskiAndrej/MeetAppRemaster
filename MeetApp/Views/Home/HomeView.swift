@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 private class HomeViewModel: ObservableObject {
     @Published var events: [Event] = []
+    @Published var isLoading = false
     @Published var commentCounts: [String: Int] = [:]
     @Published var pendingProposalCounts: [String: Int] = [:]
 
@@ -47,6 +48,7 @@ private class HomeViewModel: ObservableObject {
 
     func listenToEvents(in circleId: String) {
         stopListening()
+        isLoading = true
         eventListener = eventService.listenToEvents(circleId: circleId) { [weak self] events in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -57,6 +59,7 @@ private class HomeViewModel: ObservableObject {
                     self.proposalListeners[id]?.remove()
                     self.proposalListeners.removeValue(forKey: id)
                 }
+                self.isLoading = false
                 withAnimation(.easeInOut(duration: 0.3)) { self.events = events }
                 for event in events {
                     guard let id = event.id else { continue }
@@ -192,6 +195,9 @@ struct HomeView: View {
                 systemImage: "person.3",
                 description: Text("Join or create a circle from the menu to see events.")
             )
+        } else if viewModel.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.events.isEmpty {
             ContentUnavailableView(
                 "No Events Yet",
